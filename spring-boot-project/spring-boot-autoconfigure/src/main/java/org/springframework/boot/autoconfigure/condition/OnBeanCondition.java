@@ -69,6 +69,7 @@ import org.springframework.util.StringUtils;
  * @author Jakub Kubrynski
  * @author Stephane Nicoll
  * @author Andy Wilkinson
+ * @author Uladzislau Seuruk
  * @see ConditionalOnBean
  * @see ConditionalOnMissingBean
  * @see ConditionalOnSingleCandidate
@@ -175,10 +176,10 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 			beanFactory = (ConfigurableListableBeanFactory) parent;
 		}
 		MatchResult result = new MatchResult();
-		Set<String> beansIgnoredByType = getNamesOfBeansIgnoredByType(classLoader, beanFactory, considerHierarchy,
+		Set<String> beansIgnoredByType = getNamesOfBeansIgnoredByType(beanFactory, considerHierarchy,
 				spec.getIgnoredTypes(), parameterizedContainers);
-		for (String type : spec.getTypes()) {
-			Collection<String> typeMatches = getBeanNamesForType(classLoader, considerHierarchy, beanFactory, type,
+		for (ResolvableType type : spec.getTypes()) {
+			Collection<String> typeMatches = getBeanNamesForType(considerHierarchy, beanFactory, type,
 					parameterizedContainers);
 			Iterator<String> iterator = typeMatches.iterator();
 			while (iterator.hasNext()) {
@@ -188,10 +189,10 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 				}
 			}
 			if (typeMatches.isEmpty()) {
-				result.recordUnmatchedType(type);
+				result.recordUnmatchedType(type.toString());
 			}
 			else {
-				result.recordMatchedType(type, typeMatches);
+				result.recordMatchedType(type.toString(), typeMatches);
 			}
 		}
 		for (String annotation : spec.getAnnotations()) {
@@ -216,42 +217,48 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 		return result;
 	}
 
-	private Set<String> getNamesOfBeansIgnoredByType(ClassLoader classLoader, ListableBeanFactory beanFactory,
-			boolean considerHierarchy, Set<String> ignoredTypes, Set<Class<?>> parameterizedContainers) {
+	private Set<String> getNamesOfBeansIgnoredByType(ListableBeanFactory beanFactory, boolean considerHierarchy,
+			Set<Class<?>> ignoredTypes, Set<Class<?>> parameterizedContainers) {
 		Set<String> result = null;
-		for (String ignoredType : ignoredTypes) {
-			Collection<String> ignoredNames = getBeanNamesForType(classLoader, considerHierarchy, beanFactory,
-					ignoredType, parameterizedContainers);
+		for (Class<?> ignoredType : ignoredTypes) {
+			ResolvableType ignoredResolvableType = ResolvableType.forClass(ignoredType);
+			Collection<String> ignoredNames = getBeanNamesForType(considerHierarchy, beanFactory, ignoredResolvableType,
+					parameterizedContainers);
 			result = addAll(result, ignoredNames);
 		}
 		return (result != null) ? result : Collections.emptySet();
 	}
 
-	private Set<String> getBeanNamesForType(ClassLoader classLoader, boolean considerHierarchy,
-			ListableBeanFactory beanFactory, String type, Set<Class<?>> parameterizedContainers) throws LinkageError {
+	private Set<String> getBeanNamesForType(boolean considerHierarchy, ListableBeanFactory beanFactory,
+			ResolvableType type, Set<Class<?>> parameterizedContainers) throws LinkageError {
 		try {
-			return getBeanNamesForType(beanFactory, considerHierarchy, resolve(type, classLoader),
-					parameterizedContainers);
+			return getBeanNamesForType(beanFactory, considerHierarchy, type, parameterizedContainers);
 		}
-		catch (ClassNotFoundException | NoClassDefFoundError ex) {
+		catch (NoClassDefFoundError ex) {
 			return Collections.emptySet();
 		}
 	}
 
-	private Set<String> getBeanNamesForType(ListableBeanFactory beanFactory, boolean considerHierarchy, Class<?> type,
-			Set<Class<?>> parameterizedContainers) {
+	private Set<String> getBeanNamesForType(ListableBeanFactory beanFactory, boolean considerHierarchy,
+			ResolvableType type, Set<Class<?>> parameterizedContainers) {
 		Set<String> result = collectBeanNamesForType(beanFactory, considerHierarchy, type, parameterizedContainers,
 				null);
 		return (result != null) ? result : Collections.emptySet();
 	}
 
-	private Set<String> collectBeanNamesForType(ListableBeanFactory beanFactory, boolean considerHierarchy,
-			Class<?> type, Set<Class<?>> parameterizedContainers, Set<String> result) {
+	private Set<String> collectBeanNamesForType(ListableBeanFactory beanFactory, ResolvableType type,
+			Set<Class<?>> parameterizedContainers, Set<String> result) {
 		result = addAll(result, beanFactory.getBeanNamesForType(type, true, false));
 		for (Class<?> container : parameterizedContainers) {
 			ResolvableType generic = ResolvableType.forClassWithGenerics(container, type);
 			result = addAll(result, beanFactory.getBeanNamesForType(generic, true, false));
 		}
+		return result;
+	}
+
+	private Set<String> collectBeanNamesForType(ListableBeanFactory beanFactory, boolean considerHierarchy,
+			ResolvableType type, Set<Class<?>> parameterizedContainers, Set<String> result) {
+		result = collectBeanNamesForType(beanFactory, type, parameterizedContainers, result);
 		if (considerHierarchy && beanFactory instanceof HierarchicalBeanFactory) {
 			BeanFactory parent = ((HierarchicalBeanFactory) beanFactory).getParentBeanFactory();
 			if (parent instanceof ListableBeanFactory) {
@@ -406,11 +413,11 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 
 		private final Set<String> names;
 
-		private final Set<String> types;
+		private final Set<ResolvableType> types;
 
 		private final Set<String> annotations;
 
-		private final Set<String> ignoredTypes;
+		private final Set<Class<?>> ignoredTypes;
 
 		private final Set<Class<?>> parameterizedContainers;
 
@@ -426,10 +433,10 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 			this.annotationType = annotationType;
 			this.names = extract(attributes, "name");
 			this.annotations = extract(attributes, "annotation");
-			this.ignoredTypes = extract(attributes, "ignored", "ignoredType");
+			this.ignoredTypes = resolveWhenPossible(extract(attributes, "ignored", "ignoredType"));
 			this.parameterizedContainers = resolveWhenPossible(extract(attributes, "parameterizedContainer"));
 			this.strategy = annotation.getValue("search", SearchStrategy.class).orElse(null);
-			Set<String> types = extractTypes(attributes);
+			Set<ResolvableType> types = resolveTypes(extractTypes(attributes));
 			BeanTypeDeductionException deductionException = null;
 			if (types.isEmpty() && this.names.isEmpty()) {
 				try {
@@ -464,6 +471,25 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 				}
 			}
 			return result.isEmpty() ? Collections.emptySet() : result;
+		}
+
+		private Set<ResolvableType> resolveTypes(Set<String> types) {
+			if (types.isEmpty()) {
+				return Collections.emptySet();
+			}
+			Set<ResolvableType> resolved = new LinkedHashSet<>(types.size());
+			for (String type : types) {
+				try {
+					Class<?> typeClass = resolve(type, this.classLoader);
+					ResolvableType resolvableType = (typeClass.getTypeParameters().length != 0)
+							? ResolvableType.forRawClass(typeClass) : ResolvableType.forClass(typeClass);
+					resolved.add(resolvableType);
+				}
+				catch (ClassNotFoundException | NoClassDefFoundError ex) {
+					resolved.add(ResolvableType.NONE);
+				}
+			}
+			return resolved;
 		}
 
 		private void merge(Set<String> result, String... additional) {
@@ -508,48 +534,52 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 			return "@" + ClassUtils.getShortName(this.annotationType);
 		}
 
-		private Set<String> deducedBeanType(ConditionContext context, AnnotatedTypeMetadata metadata) {
+		private Set<ResolvableType> deducedBeanType(ConditionContext context, AnnotatedTypeMetadata metadata) {
 			if (metadata instanceof MethodMetadata && metadata.isAnnotated(Bean.class.getName())) {
 				return deducedBeanTypeForBeanMethod(context, (MethodMetadata) metadata);
 			}
 			return Collections.emptySet();
 		}
 
-		private Set<String> deducedBeanTypeForBeanMethod(ConditionContext context, MethodMetadata metadata) {
+		private Set<ResolvableType> deducedBeanTypeForBeanMethod(ConditionContext context, MethodMetadata metadata) {
 			try {
-				Class<?> returnType = getReturnType(context, metadata);
-				return Collections.singleton(returnType.getName());
+				ResolvableType returnType = getReturnType(context, metadata);
+				return Collections.singleton(returnType);
 			}
 			catch (Throwable ex) {
 				throw new BeanTypeDeductionException(metadata.getDeclaringClassName(), metadata.getMethodName(), ex);
 			}
 		}
 
-		private Class<?> getReturnType(ConditionContext context, MethodMetadata metadata)
+		private ResolvableType getReturnType(ConditionContext context, MethodMetadata metadata)
 				throws ClassNotFoundException, LinkageError {
 			// Safe to load at this point since we are in the REGISTER_BEAN phase
 			ClassLoader classLoader = context.getClassLoader();
-			Class<?> returnType = resolve(metadata.getReturnTypeName(), classLoader);
+			ResolvableType returnType = getMethodReturnType(metadata, classLoader);
 			if (isParameterizedContainer(returnType)) {
-				returnType = getReturnTypeGeneric(metadata, classLoader);
+				returnType = returnType.getGeneric();
 			}
 			return returnType;
 		}
 
-		private boolean isParameterizedContainer(Class<?> type) {
+		private boolean isParameterizedContainer(ResolvableType type) {
+			Class<?> rawType = type.getRawClass();
+			if (rawType == null) {
+				return false;
+			}
 			for (Class<?> parameterizedContainer : this.parameterizedContainers) {
-				if (parameterizedContainer.isAssignableFrom(type)) {
+				if (parameterizedContainer.isAssignableFrom(rawType)) {
 					return true;
 				}
 			}
 			return false;
 		}
 
-		private Class<?> getReturnTypeGeneric(MethodMetadata metadata, ClassLoader classLoader)
+		private ResolvableType getMethodReturnType(MethodMetadata metadata, ClassLoader classLoader)
 				throws ClassNotFoundException, LinkageError {
 			Class<?> declaringClass = resolve(metadata.getDeclaringClassName(), classLoader);
 			Method beanMethod = findBeanMethod(declaringClass, metadata.getMethodName());
-			return ResolvableType.forMethodReturnType(beanMethod).resolveGeneric();
+			return ResolvableType.forMethodReturnType(beanMethod);
 		}
 
 		private Method findBeanMethod(Class<?> declaringClass, String methodName) {
@@ -579,7 +609,7 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 			return this.names;
 		}
 
-		Set<String> getTypes() {
+		Set<ResolvableType> getTypes() {
 			return this.types;
 		}
 
@@ -587,7 +617,7 @@ class OnBeanCondition extends FilteringSpringBootCondition implements Configurat
 			return this.annotations;
 		}
 
-		Set<String> getIgnoredTypes() {
+		Set<Class<?>> getIgnoredTypes() {
 			return this.ignoredTypes;
 		}
 
