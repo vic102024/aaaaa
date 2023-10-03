@@ -24,6 +24,7 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.net.URLConnection;
 import java.util.Enumeration;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -52,6 +53,8 @@ public class LaunchedURLClassLoader extends URLClassLoader {
 	private final Archive rootArchive;
 
 	private final Object packageLock = new Object();
+
+	private final ClassLoaderCache loaderCache = new ClassLoaderCache();
 
 	private volatile DefinePackageCallType definePackageCallType;
 
@@ -90,12 +93,16 @@ public class LaunchedURLClassLoader extends URLClassLoader {
 
 	@Override
 	public URL findResource(String name) {
+		Optional<URL> optional = this.loaderCache.getResourceCache(name);
+		if (optional != null) {
+			return optional.orElse(null);
+		}
 		if (this.exploded) {
-			return super.findResource(name);
+			return this.loaderCache.cacheResourceUrl(name, super.findResource(name));
 		}
 		Handler.setUseFastConnectionExceptions(true);
 		try {
-			return super.findResource(name);
+			return this.loaderCache.cacheResourceUrl(name, super.findResource(name));
 		}
 		finally {
 			Handler.setUseFastConnectionExceptions(false);
@@ -104,12 +111,17 @@ public class LaunchedURLClassLoader extends URLClassLoader {
 
 	@Override
 	public Enumeration<URL> findResources(String name) throws IOException {
+		Optional<Enumeration<URL>> optional = this.loaderCache.getResourcesCache(name);
+		if (optional != null) {
+			return optional.orElse(null);
+		}
 		if (this.exploded) {
-			return super.findResources(name);
+			return this.loaderCache.cacheResourceUrls(name, super.findResources(name));
 		}
 		Handler.setUseFastConnectionExceptions(true);
 		try {
-			return new UseFastConnectionExceptionsEnumeration(super.findResources(name));
+			return this.loaderCache.cacheResourceUrls(name,
+					new UseFastConnectionExceptionsEnumeration(super.findResources(name)));
 		}
 		finally {
 			Handler.setUseFastConnectionExceptions(false);
@@ -118,6 +130,21 @@ public class LaunchedURLClassLoader extends URLClassLoader {
 
 	@Override
 	protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+		this.loaderCache.fastClassNotFoundException(name);
+		try {
+			return loadClassInternal(name, resolve);
+		}
+		catch (ClassNotFoundException ex) {
+			this.loaderCache.cacheClassNotFoundException(name, ex);
+			throw ex;
+		}
+	}
+
+	public void setEnableCache(boolean enableCache) {
+		this.loaderCache.setEnableCache(enableCache);
+	}
+
+	private Class<?> loadClassInternal(String name, boolean resolve) throws ClassNotFoundException {
 		if (name.startsWith("org.springframework.boot.loader.jarmode.")) {
 			try {
 				Class<?> result = loadClassInLaunchedClassLoader(name);
@@ -288,6 +315,7 @@ public class LaunchedURLClassLoader extends URLClassLoader {
 	 * Clear URL caches.
 	 */
 	public void clearCache() {
+		this.loaderCache.clearCache();
 		if (this.exploded) {
 			return;
 		}
