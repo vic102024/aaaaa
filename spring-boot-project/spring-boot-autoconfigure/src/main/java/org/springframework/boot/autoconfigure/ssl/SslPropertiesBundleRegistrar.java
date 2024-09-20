@@ -16,15 +16,17 @@
 
 package org.springframework.boot.autoconfigure.ssl;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import org.springframework.boot.ssl.pem.PemCertificate;
 import org.springframework.boot.ssl.SslBundle;
 import org.springframework.boot.ssl.SslBundleRegistry;
 
@@ -54,13 +56,13 @@ class SslPropertiesBundleRegistrar implements SslBundleRegistrar {
 	}
 
 	private <P extends SslBundleProperties> void registerBundles(SslBundleRegistry registry, Map<String, P> properties,
-			Function<P, SslBundle> bundleFactory, Function<Bundle<P>, Set<Path>> watchedPaths) {
+			Function<P, SslBundle> bundleFactory, Function<Bundle<P>, Set<WatchablePath>> watchedPaths) {
 		properties.forEach((bundleName, bundleProperties) -> {
 			Supplier<SslBundle> bundleSupplier = () -> bundleFactory.apply(bundleProperties);
 			try {
 				registry.registerBundle(bundleName, bundleSupplier.get());
 				if (bundleProperties.isReloadOnUpdate()) {
-					Supplier<Set<Path>> pathsSupplier = () -> watchedPaths
+					Supplier<Set<WatchablePath>> pathsSupplier = () -> watchedPaths
 						.apply(new Bundle<>(bundleName, bundleProperties));
 					watchForUpdates(registry, bundleName, pathsSupplier, bundleSupplier);
 				}
@@ -71,7 +73,7 @@ class SslPropertiesBundleRegistrar implements SslBundleRegistrar {
 		});
 	}
 
-	private void watchForUpdates(SslBundleRegistry registry, String bundleName, Supplier<Set<Path>> pathsSupplier,
+	private void watchForUpdates(SslBundleRegistry registry, String bundleName, Supplier<Set<WatchablePath>> pathsSupplier,
 			Supplier<SslBundle> bundleSupplier) {
 		try {
 			this.fileWatcher.watch(pathsSupplier.get(), () -> registry.updateBundle(bundleName, bundleSupplier.get()));
@@ -81,7 +83,7 @@ class SslPropertiesBundleRegistrar implements SslBundleRegistrar {
 		}
 	}
 
-	private Set<Path> watchedJksPaths(Bundle<JksSslBundleProperties> bundle) {
+	private Set<WatchablePath> watchedJksPaths(Bundle<JksSslBundleProperties> bundle) {
 		List<BundleContentProperty> watched = new ArrayList<>();
 		watched.add(new BundleContentProperty("keystore.location", bundle.properties().getKeystore().getLocation()));
 		watched
@@ -89,23 +91,35 @@ class SslPropertiesBundleRegistrar implements SslBundleRegistrar {
 		return watchedPaths(bundle.name(), watched);
 	}
 
-	private Set<Path> watchedPemPaths(Bundle<PemSslBundleProperties> bundle) {
+	private Set<WatchablePath> watchedPemPaths(Bundle<PemSslBundleProperties> bundle) {
 		List<BundleContentProperty> watched = new ArrayList<>();
+		BiFunction<String, String, BundleContentProperty> contentKeyStoreCertificateProperty = locationToBundleContentProperty();
 		watched
 			.add(new BundleContentProperty("keystore.private-key", bundle.properties().getKeystore().getPrivateKey()));
-		watched
-			.add(new BundleContentProperty("keystore.certificate", bundle.properties().getKeystore().getCertificate()));
+		bundle.properties().getKeystore().getCertificates().stream()
+			.map(location -> contentKeyStoreCertificateProperty.apply(location, "keystore.certificate"))
+			.forEach(watched::add);
 		watched.add(new BundleContentProperty("truststore.private-key",
 				bundle.properties().getTruststore().getPrivateKey()));
-		watched.add(new BundleContentProperty("truststore.certificate",
-				bundle.properties().getTruststore().getCertificate()));
+		bundle.properties().getTruststore().getCertificates().stream()
+			.map(location -> contentKeyStoreCertificateProperty.apply(location, "truststore.certificate"))
+			.forEach(watched::add);
 		return watchedPaths(bundle.name(), watched);
 	}
 
-	private Set<Path> watchedPaths(String bundleName, List<BundleContentProperty> properties) {
+	private BiFunction<String, String, BundleContentProperty> locationToBundleContentProperty() {
+		PemCertificateParser certificateParser = new PemCertificateParser();
+		return (location, name) -> {
+			PemCertificate certificate = certificateParser.parse(location);
+			return new BundleContentProperty(name, certificate.location(), certificate.optional());
+		};
+	}
+
+	private Set<WatchablePath> watchedPaths(String bundleName, List<BundleContentProperty> properties) {
 		try {
 			return properties.stream()
 				.filter(BundleContentProperty::hasValue)
+				.filter(Predicate.not(BundleContentProperty::isPemContent))
 				.map(BundleContentProperty::toWatchPath)
 				.collect(Collectors.toSet());
 		}

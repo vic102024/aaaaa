@@ -16,6 +16,9 @@
 
 package org.springframework.boot.autoconfigure.ssl;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.springframework.boot.autoconfigure.ssl.SslBundleProperties.Key;
 import org.springframework.boot.ssl.SslBundle;
 import org.springframework.boot.ssl.SslBundleKey;
@@ -24,6 +27,7 @@ import org.springframework.boot.ssl.SslOptions;
 import org.springframework.boot.ssl.SslStoreBundle;
 import org.springframework.boot.ssl.jks.JksSslStoreBundle;
 import org.springframework.boot.ssl.jks.JksSslStoreDetails;
+import org.springframework.boot.ssl.pem.PemCertificate;
 import org.springframework.boot.ssl.pem.PemSslStore;
 import org.springframework.boot.ssl.pem.PemSslStoreBundle;
 import org.springframework.boot.ssl.pem.PemSslStoreDetails;
@@ -118,8 +122,12 @@ public final class PropertiesSslBundle implements SslBundle {
 	}
 
 	private static PemSslStoreDetails asPemSslStoreDetails(PemSslBundleProperties.Store properties) {
-		return new PemSslStoreDetails(properties.getType(), properties.getCertificate(), properties.getPrivateKey(),
-				properties.getPrivateKeyPassword());
+		PemCertificateParser converter = new PemCertificateParser();
+		Set<PemCertificate> pemCertificates = properties.getCertificates().stream()
+			.map(converter::parse)
+			.collect(Collectors.toSet());
+		return new PemSslStoreDetails(properties.getType(), pemCertificates, properties.getPrivateKey(),
+			properties.getPrivateKeyPassword());
 	}
 
 	/**

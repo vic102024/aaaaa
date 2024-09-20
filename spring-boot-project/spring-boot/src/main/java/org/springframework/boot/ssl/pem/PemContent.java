@@ -16,6 +16,7 @@
 
 package org.springframework.boot.ssl.pem;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -113,6 +114,18 @@ public final class PemContent {
 	 * @throws IOException on IO error
 	 */
 	static PemContent load(String content) throws IOException {
+		return load(content, false);
+	}
+
+	/**
+	 * Load {@link PemContent} from the given content (either the PEM content itself or a
+	 * reference to the resource to load).
+	 * @param content the content to load
+	 * @param optional if the content is optional
+	 * @return a new {@link PemContent} instance
+	 * @throws IOException on IO error
+	 */
+	static PemContent load(String content, boolean optional) throws IOException {
 		if (content == null) {
 			return null;
 		}
@@ -124,6 +137,9 @@ public final class PemContent {
 			return load(resource.getInputStream());
 		}
 		catch (IOException | UncheckedIOException ex) {
+			if (ex instanceof FileNotFoundException && optional) {
+				return null;
+			}
 			throw new IOException("Error reading certificate or key from file '%s'".formatted(content), ex);
 		}
 	}

@@ -21,7 +21,6 @@ import java.nio.file.Path;
 import org.springframework.boot.io.ApplicationResourceLoader;
 import org.springframework.boot.ssl.pem.PemContent;
 import org.springframework.core.io.Resource;
-import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 /**
@@ -33,7 +32,12 @@ import org.springframework.util.StringUtils;
  * @author Phillip Webb
  * @author Moritz Halbritter
  */
-record BundleContentProperty(String name, String value) {
+record BundleContentProperty(String name, String value, boolean optional) {
+
+	BundleContentProperty(String name, String value)
+	{
+		this(name, value,false);
+	}
 
 	/**
 	 * Return if the property value is PEM content.
@@ -51,13 +55,16 @@ record BundleContentProperty(String name, String value) {
 		return StringUtils.hasText(this.value);
 	}
 
-	Path toWatchPath() {
+	WatchablePath toWatchPath() {
 		try {
+			if (isPemContent()) {
+				return null;
+			}
 			Resource resource = getResource();
 			if (!resource.isFile()) {
 				throw new BundleContentNotWatchableException(this);
 			}
-			return Path.of(resource.getFile().getAbsolutePath());
+			return new WatchablePath(this.optional, Path.of(resource.getFile().getAbsolutePath()));
 		}
 		catch (Exception ex) {
 			if (ex instanceof BundleContentNotWatchableException bundleContentNotWatchableException) {
@@ -69,7 +76,6 @@ record BundleContentProperty(String name, String value) {
 	}
 
 	private Resource getResource() {
-		Assert.state(!isPemContent(), "Value contains PEM content");
 		return new ApplicationResourceLoader().getResource(this.value);
 	}
 
