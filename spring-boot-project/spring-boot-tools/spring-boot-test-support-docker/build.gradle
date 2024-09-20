@@ -15,6 +15,7 @@ dependencies {
 	compileOnly("org.springframework:spring-core")
 
 	optional("org.testcontainers:activemq")
+	optional("org.testcontainers:db2")
 	optional("org.testcontainers:cassandra")
 	optional("org.testcontainers:couchbase")
 	optional("org.testcontainers:elasticsearch")
