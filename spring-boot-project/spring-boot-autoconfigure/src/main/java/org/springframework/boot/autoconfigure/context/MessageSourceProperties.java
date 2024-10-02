@@ -45,6 +45,11 @@ public class MessageSourceProperties {
 	private List<String> basename = new ArrayList<>(List.of("messages"));
 
 	/**
+	 * Comma-separated list of locale-independent common messages.
+	 */
+	private String commonMessages;
+	
+	/**
 	 * Message bundles encoding.
 	 */
 	private Charset encoding = StandardCharsets.UTF_8;
@@ -123,4 +128,11 @@ public class MessageSourceProperties {
 		this.useCodeAsDefaultMessage = useCodeAsDefaultMessage;
 	}
 
+	public String getCommonMessages() {
+		return this.commonMessages;
+	}
+
+	public void setCommonMessages(String commonMessages) {
+		this.commonMessages = commonMessages;
+	}
 }
