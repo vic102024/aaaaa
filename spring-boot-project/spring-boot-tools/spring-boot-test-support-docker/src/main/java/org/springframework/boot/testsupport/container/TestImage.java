@@ -29,6 +29,7 @@ import org.testcontainers.activemq.ActiveMQContainer;
 import org.testcontainers.activemq.ArtemisContainer;
 import org.testcontainers.containers.CassandraContainer;
 import org.testcontainers.containers.Container;
+import org.testcontainers.containers.Db2Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.MongoDBContainer;
@@ -54,6 +55,7 @@ import org.springframework.util.Assert;
  * @author Moritz Halbritter
  * @author Chris Bono
  * @author Phillip Webb
+ * @author Yanming Zhou
  */
 public enum TestImage {
 
@@ -84,14 +86,20 @@ public enum TestImage {
 			(container) -> ((CassandraContainer<?>) container).withStartupTimeout(Duration.ofMinutes(10))),
 
 	/**
-	 * A container image suitable for testing Couchbase.
+	 * A Docker image suitable for running.
 	 */
 	COUCHBASE("couchbase/server", "7.1.4", () -> CouchbaseContainer.class,
 			(container) -> ((CouchbaseContainer) container).withStartupAttempts(5)
 				.withStartupTimeout(Duration.ofMinutes(10))),
 
 	/**
-	 * A container image suitable for testing Elasticsearch 7.
+	 * A container image suitable for testing DB2.
+	 */
+	DB2("ibmcom/db2", "11.5.8.0", () -> Db2Container.class,
+			(container) -> ((Db2Container) container).withStartupTimeout(Duration.ofMinutes(10))),
+
+	/**
+	 * A Docker image suitable for Elasticsearch 7.
 	 */
 	ELASTICSEARCH("docker.elastic.co/elasticsearch/elasticsearch", "7.17.5", () -> ElasticsearchContainer.class,
 			(container) -> ((ElasticsearchContainer) container).withEnv("ES_JAVA_OPTS", "-Xms32m -Xmx512m")
@@ -135,7 +143,7 @@ public enum TestImage {
 	MARIADB("mariadb", "10.10"),
 
 	/**
-	 * A container image suitable for testing MongoDB.
+	 * A Docker image suitable for MongoDB.
 	 */
 	MONGODB("mongo", "5.0.17", () -> MongoDBContainer.class,
 			(container) -> ((MongoDBContainer) container).withStartupAttempts(5)
@@ -218,7 +226,7 @@ public enum TestImage {
 			(container) -> ((RedpandaContainer) container).withStartupTimeout(Duration.ofMinutes(5))),
 
 	/**
-	 * A container image suitable for testing Docker Registry.
+	 * A container image suitable for testing a Docker registry.
 	 */
 	REGISTRY("registry", "2.7.1", () -> RegistryContainer.class,
 			(container) -> ((RegistryContainer) container).withStartupAttempts(5)
@@ -250,7 +258,7 @@ public enum TestImage {
 	BITNAMI_MARIADB("bitnami/mariadb", "11.2.3"),
 
 	/**
-	 * A container image suitable for testing MongoDB via Bitnami.
+	 * A Docker image suitable for MongoDB via Bitnami.
 	 */
 	BITNAMI_MONGODB("bitnami/mongodb", "7.0.5"),
 
