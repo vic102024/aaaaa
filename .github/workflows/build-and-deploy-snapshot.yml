@@ -24,7 +24,7 @@ jobs:
           commercial-release-repository-url: ${{ vars.COMMERCIAL_RELEASE_REPO_URL }}
           commercial-snapshot-repository-url: ${{ vars.COMMERCIAL_SNAPSHOT_REPO_URL }}
       - name: Deploy
-        uses: spring-io/artifactory-deploy-action@26bbe925a75f4f863e1e529e85be2d0093cac116 # v0.0.1
+        uses: spring-io/artifactory-deploy-action@dc1913008c0599f0c4b1fdafb6ff3c502b3565ea # v0.0.2
         with:
           uri: ${{ vars.COMMERCIAL_DEPLOY_REPO_URL || 'https://repo.spring.io' }}
           username: ${{ vars.COMMERCIAL && secrets.COMMERCIAL_ARTIFACTORY_USERNAME || secrets.ARTIFACTORY_USERNAME }}
